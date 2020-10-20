@@ -38,12 +38,14 @@ class BartSummarizationDistiller(SummarizationModule):
         save_dir = self.output_dir.joinpath("student")
 
         hparams.model_name_or_path = str(save_dir)  # Tell lightning we are training the student
+
+
         teacher = AutoModelForSeq2SeqLM.from_pretrained(hparams.teacher).eval()
         use_task_specific_params(teacher, hparams.task)  # We copy good generation parameters to student by default
         
         e_layer_ids, d_layer_ids = None, None
         if hparams.student is not None:
-            student = AutoModelForSeq2SeqLM.from_pretrained(hparams.student).eval()
+            student = AutoModelForSeq2SeqLM.from_pretrained(hparams.student)
             use_task_specific_params(student, hparams.task)
         else:
             student, e_layer_ids, d_layer_ids = create_student_by_copying_alternating_layers(
@@ -186,20 +188,12 @@ class BartSummarizationDistiller(SummarizationModule):
             return torch.tensor(0.0).type_as(student_lm_loss)
 
         teacher_enc_outputs = enc_outputs
-        hid_loss_enc, hid_loss_dec = zero_tensor(), zero_tensor()
+        hid_loss_dec = zero_tensor()
         if self.different_encoder:  # compute encoder hidden state loss
             with torch.no_grad():
                 teacher_enc_outputs, teacher_enc_hid = self.teacher.get_encoder()(
                     input_ids, attention_mask=src_mask, output_hidden_states=True
                 )
-            hid_loss_enc = self.maybe_calc_hidden_loss(
-                src_mask,
-                enc_hidden_state,
-                teacher_enc_hid,
-                self.e_matches,
-                normalize_hidden=self.hparams.normalize_hidden,
-            )
-     
 
         teacher_mask = input_ids.ne(pad_token_id)
         with torch.no_grad():
@@ -215,43 +209,14 @@ class BartSummarizationDistiller(SummarizationModule):
             tlogits, tdec_hidden = outputs.logits, outputs.decoder_hidden_states 
         dec_mask = teacher_decoder_input_ids.ne(pad_token_id)
         loss_ce = self.calc_ce_loss(dec_mask, lm_logits, tlogits)
-        if self.alpha_hid > 0:  # Intermediate supervision of decoder hidden states
-            hid_loss_dec = self.maybe_calc_hidden_loss(
-                dec_mask, dec_hidden, tdec_hidden, self.d_matches, normalize_hidden=self.hparams.normalize_hidden
-            )
 
         blended_loss = (
             self.alpha_ce * loss_ce
             + self.alpha_mlm * student_lm_loss
-            + self.hparams.alpha_hid * (hid_loss_enc + hid_loss_dec)
+            + self.hparams.alpha_hid * (hid_loss_dec)
         )
-        return blended_loss, loss_ce, student_lm_loss, hid_loss_enc, hid_loss_dec
+        return blended_loss, loss_ce, student_lm_loss, hid_loss_dec
 
-
-
-    @staticmethod
-    def calc_hidden_loss(attention_mask, hidden_states, hidden_states_T, matches, normalize_hidden):
-        """MSE(student_hid, teacher_hid[matches]). Called "Intermediate supervision" in paper. Inspired by TinyBERT."""
-        msg = "expected list or tuple for hidden_states, got tensor of shape: "
-        assert not isinstance(hidden_states, torch.Tensor), f"{msg}{hidden_states.shape}"
-        assert not isinstance(hidden_states_T, torch.Tensor), f"{msg}{hidden_states_T.shape}"
-        mask = attention_mask.to(hidden_states[0])
-        valid_count = mask.sum() * hidden_states[0].size(-1)
-        student_states = torch.stack([hidden_states[i] for i in range(len(matches))])
-        teacher_states = torch.stack([hidden_states_T[j] for j in matches])
-        if normalize_hidden:
-            student_states = F.layer_norm(student_states, student_states.shape[1:])
-            teacher_states = F.layer_norm(teacher_states, teacher_states.shape[1:])
-        mse = F.mse_loss(student_states, teacher_states, reduction="none")
-        masked_mse = (mse * mask.unsqueeze(0).unsqueeze(-1)).sum() / valid_count
-        return masked_mse
-
-    @staticmethod
-    def maybe_calc_hidden_loss(attention_mask, hidden_states, hidden_states_T, matches, normalize_hidden):
-        if matches:
-            return calc_hidden_loss(attention_mask, hidden_states, hidden_states_T, matches, normalize_hidden)
-        else:
-            return torch.tensor(0.0)
 
 def add_distill_args(parser):
     parser.add_argument("--teacher", type=str)
