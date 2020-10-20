@@ -28,7 +28,8 @@ from lightning_base import generic_train  # noqa
 class BartSummarizationDistiller(SummarizationModule):
     """Supports Bart, Pegasus and other models that inherit from Bart."""
 
-    loss_names = ["loss", "ce_loss", "mlm_loss", "hid_loss_enc", "hid_loss_dec"]
+    # loss_names = ["loss", "ce_loss", "mlm_loss", "hid_loss_enc", "hid_loss_dec"]
+    loss_names = ["loss", "mlm_loss"]
 
     def __init__(self, hparams):
         assert Path(hparams.data_dir).exists()
@@ -78,11 +79,11 @@ class BartSummarizationDistiller(SummarizationModule):
         # self.teacher = teacher
         # freeze_params(self.teacher)
 
-        if not self.different_encoder:  # To save RAM, delete teacher encoder and freeze student encoder.
-            try:
-                del self.teacher.model.encoder
-            except AttributeError:  # T5
-                del self.teacher.encoder
+        # if not self.different_encoder:  # To save RAM, delete teacher encoder and freeze student encoder.
+        #     try:
+        #         del self.teacher.model.encoder
+        #     except AttributeError:  # T5
+        #         del self.teacher.encoder
 
         self.e_matches = None
         self.d_matches = None
@@ -160,18 +161,13 @@ class BartSummarizationDistiller(SummarizationModule):
 
         # Same cross entropy vs. label smoothing logic as finetune.py
         assert lm_logits.shape[-1] == self.model.config.vocab_size
-        if self.hparams.label_smoothing == 0:
-            # Same behavior as modeling_bart.py, besides ignoring pad_token_id
-            loss_fct = torch.nn.CrossEntropyLoss(ignore_index=pad_token_id)
-            student_lm_loss = loss_fct(lm_logits.view(-1, lm_logits.shape[-1]), labels.view(-1))
-        else:
-            lprobs = torch.nn.functional.log_softmax(lm_logits, dim=-1)
-            student_lm_loss, _ = label_smoothed_nll_loss(
-                lprobs, labels, self.hparams.label_smoothing, ignore_index=pad_token_id
-            )
+        # Same behavior as modeling_bart.py, besides ignoring pad_token_id
+        loss_fct = torch.nn.CrossEntropyLoss(ignore_index=pad_token_id)
+        student_lm_loss = loss_fct(lm_logits.view(-1, lm_logits.shape[-1]), labels.view(-1))
 
-        def zero_tensor():
-            return torch.tensor(0.0).type_as(student_lm_loss)
+
+        # def zero_tensor():
+        #     return torch.tensor(0.0).type_as(student_lm_loss)
 
         # teacher_enc_outputs = enc_outputs
         # hid_loss_dec = zero_tensor()
@@ -202,10 +198,11 @@ class BartSummarizationDistiller(SummarizationModule):
             # + self.hparams.alpha_hid * (hid_loss_dec)
         )
 
-        loss_ce = torch.tensor(0.0)
-        hid_loss_dec = torch.tensor(0.0)
+        # loss_ce = torch.tensor(0.0)
+        # hid_loss_dec = torch.tensor(0.0)
 
-        return blended_loss, loss_ce, student_lm_loss, hid_loss_dec
+        # return blended_loss, loss_ce, student_lm_loss, hid_loss_dec
+        return blended_loss, student_lm_loss
 
 
 def add_distill_args(parser):
