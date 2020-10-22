@@ -28,8 +28,7 @@ from lightning_base import generic_train  # noqa
 class BartSummarizationDistiller(SummarizationModule):
     """Supports Bart, Pegasus and other models that inherit from Bart."""
 
-    # loss_names = ["loss", "ce_loss", "mlm_loss", "hid_loss_enc", "hid_loss_dec"]
-    loss_names = ["loss", "mlm_loss"]
+    loss_names = ["loss", "ce_loss", "mlm_loss", "hid_loss_dec"]
 
     def __init__(self, hparams):
         assert Path(hparams.data_dir).exists()
@@ -41,8 +40,8 @@ class BartSummarizationDistiller(SummarizationModule):
         hparams.model_name_or_path = str(save_dir)  # Tell lightning we are training the student
 
 
-        # teacher = AutoModelForSeq2SeqLM.from_pretrained(hparams.teacher).eval()
-        # use_task_specific_params(teacher, hparams.task)  # We copy good generation parameters to student by default
+        teacher = AutoModelForSeq2SeqLM.from_pretrained(hparams.teacher).eval()
+        use_task_specific_params(teacher, hparams.task)  # We copy good generation parameters to student by default
         
         e_layer_ids, d_layer_ids = None, None
         student = AutoModelForSeq2SeqLM.from_pretrained(hparams.student)
@@ -56,18 +55,18 @@ class BartSummarizationDistiller(SummarizationModule):
         student_encoder_layers, student_decoder_layers = None, None
 
         if model_type == "t5":
-            # teacher_encoder_layers = len(teacher.get_encoder().block)
-            # teacher_decoder_layers = len(teacher.get_decoder().block)
+            teacher_encoder_layers = len(teacher.get_encoder().block)
+            teacher_decoder_layers = len(teacher.get_decoder().block)
             student_encoder_layers = len(student.get_encoder().block)
             student_decoder_layers = len(student.get_decoder().block)
         else:
-            # teacher_encoder_layers = teacher.config.encoder_layers
-            # teacher_decoder_layers = teacher.config.decoder_layers
+            teacher_encoder_layers = teacher.config.encoder_layers
+            teacher_decoder_layers = teacher.config.decoder_layers
             student_encoder_layers = student.config.encoder_layers
             student_decoder_layers = student.config.decoder_layers
 
-        # self.different_encoder = student_encoder_layers != teacher_encoder_layers
-        # self.different_decoder = student_decoder_layers != teacher_decoder_layers
+        self.different_encoder = student_encoder_layers != teacher_encoder_layers
+        self.different_decoder = student_decoder_layers != teacher_decoder_layers
 
         if e_layer_ids is None or d_layer_ids is None:
            e_layer_ids = list(range(student_encoder_layers))
@@ -76,8 +75,8 @@ class BartSummarizationDistiller(SummarizationModule):
         
         self.e_layer_ids, self.d_layer_ids = e_layer_ids, d_layer_ids  # type: List[int], List[int]
 
-        # self.teacher = teacher
-        # freeze_params(self.teacher)
+        self.teacher = teacher
+        freeze_params(self.teacher)
 
         # if not self.different_encoder:  # To save RAM, delete teacher encoder and freeze student encoder.
         #     try:
@@ -139,10 +138,10 @@ class BartSummarizationDistiller(SummarizationModule):
         # assert is_frozen(self.teacher) copied_decoder_layers
         pad_token_id = self.tokenizer.pad_token_id
         input_ids, src_mask, labels = batch["input_ids"], batch["attention_mask"], batch["labels"]
-        # if isinstance(self.teacher, T5ForConditionalGeneration):
-        #     teacher_decoder_input_ids = self.teacher._shift_right(labels)
-        # else:
-        #     teacher_decoder_input_ids = shift_tokens_right(labels, pad_token_id)
+        if isinstance(self.teacher, T5ForConditionalGeneration):
+            teacher_decoder_input_ids = self.teacher._shift_right(labels)
+        else:
+            teacher_decoder_input_ids = shift_tokens_right(labels, pad_token_id)
 
         if isinstance(self.model, T5ForConditionalGeneration):
             student_decoder_input_ids = self.model._shift_right(labels)
@@ -166,43 +165,39 @@ class BartSummarizationDistiller(SummarizationModule):
         student_lm_loss = loss_fct(lm_logits.view(-1, lm_logits.shape[-1]), labels.view(-1))
 
 
-        # def zero_tensor():
-        #     return torch.tensor(0.0).type_as(student_lm_loss)
+        def zero_tensor():
+            return torch.tensor(0.0).type_as(student_lm_loss)
 
-        # teacher_enc_outputs = enc_outputs
-        # hid_loss_dec = zero_tensor()
-        # if self.different_encoder:  # compute encoder hidden state loss
-        #     with torch.no_grad():
-        #         teacher_enc_outputs, teacher_enc_hid = self.teacher.get_encoder()(
-        #             input_ids, attention_mask=src_mask, output_hidden_states=True
-        #         )
+        teacher_enc_outputs = enc_outputs
+        hid_loss_dec = zero_tensor()
+        if self.different_encoder:  # compute encoder hidden state loss
+            with torch.no_grad():
+                teacher_enc_outputs, teacher_enc_hid = self.teacher.get_encoder()(
+                    input_ids, attention_mask=src_mask, output_hidden_states=True
+                )
 
-        # teacher_mask = input_ids.ne(pad_token_id)
-        # with torch.no_grad():
-            # outputs = self.teacher(
-            #     input_ids,
-            #     attention_mask=teacher_mask,
-            #     encoder_outputs=(teacher_enc_outputs, ),
-            #     decoder_input_ids=teacher_decoder_input_ids,
-            #     lm_labels=labels,
-            #     output_hidden_states=True,
-            #     return_dict=True,
-            # )
-            # tlogits, tdec_hidden = outputs.logits, outputs.decoder_hidden_states
-        # dec_mask = teacher_decoder_input_ids.ne(pad_token_id)
-        # loss_ce = self.calc_ce_loss(dec_mask, lm_logits, tlogits)
+        teacher_mask = input_ids.ne(pad_token_id)
+        with torch.no_grad():
+            outputs = self.teacher(
+                input_ids,
+                attention_mask=teacher_mask,
+                encoder_outputs=(teacher_enc_outputs, ),
+                decoder_input_ids=teacher_decoder_input_ids,
+                lm_labels=labels,
+                output_hidden_states=True,
+                return_dict=True,
+            )
+            tlogits, tdec_hidden = outputs.logits, outputs.decoder_hidden_states
+        dec_mask = teacher_decoder_input_ids.ne(pad_token_id)
+        loss_ce = self.calc_ce_loss(dec_mask, lm_logits, tlogits)
 
         blended_loss = (
-            # self.alpha_ce * loss_ce
+            self.alpha_ce * loss_ce
             + self.alpha_mlm * student_lm_loss
-            # + self.hparams.alpha_hid * (hid_loss_dec)
+            + self.hparams.alpha_hid * (hid_loss_dec)
         )
 
-        # loss_ce = torch.tensor(0.0)
-        # hid_loss_dec = torch.tensor(0.0)
-
-        # return blended_loss, loss_ce, student_lm_loss, hid_loss_dec
-        return blended_loss, student_lm_loss
+        return blended_loss, loss_ce, student_lm_loss, hid_loss_dec
 
 
 def add_distill_args(parser):
