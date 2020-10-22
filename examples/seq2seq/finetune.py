@@ -148,7 +148,7 @@ class SummarizationModule(BaseTransformer):
 
         outputs = self(src_ids, attention_mask=src_mask, decoder_input_ids=decoder_input_ids, use_cache=False)
         sequence_output = outputs[0]
-        sequence_output = sequence_output * (self.model_dim ** -0.5)
+        sequence_output = sequence_output * (self.model.model_dim ** -0.5)
         lm_logits = self.model.lm_head(sequence_output)
         if self.hparams.label_smoothing == 0:
             # Same behavior as modeling_bart.py, besides ignoring pad_token_id
