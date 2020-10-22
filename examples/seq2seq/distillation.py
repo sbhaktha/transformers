@@ -19,7 +19,6 @@ from transformers import AutoModelForSeq2SeqLM, MBartTokenizer, T5ForConditional
 from transformers.modeling_bart import shift_tokens_right
 from utils import calculate_bleu, freeze_params, label_smoothed_nll_loss, use_task_specific_params
 
-
 # need the parent dir module
 sys.path.insert(2, str(Path(__file__).resolve().parents[1]))
 from lightning_base import generic_train  # noqa
@@ -39,14 +38,13 @@ class BartSummarizationDistiller(SummarizationModule):
 
         hparams.model_name_or_path = str(save_dir)  # Tell lightning we are training the student
 
-
         teacher = AutoModelForSeq2SeqLM.from_pretrained(hparams.teacher).eval()
         use_task_specific_params(teacher, hparams.task)  # We copy good generation parameters to student by default
-        
+
         e_layer_ids, d_layer_ids = None, None
         student = AutoModelForSeq2SeqLM.from_pretrained(hparams.student)
         use_task_specific_params(student, hparams.task)
-        
+
         if hparams.length_penalty != -1:
             student.config.length_penalty = hparams.length_penalty
         super().__init__(hparams, model=student, config=student.config)
@@ -55,24 +53,30 @@ class BartSummarizationDistiller(SummarizationModule):
         student_encoder_layers, student_decoder_layers = None, None
 
         # if model_type == "t5":
-        teacher_encoder_layers = len(teacher.get_encoder().block)
-        teacher_decoder_layers = len(teacher.get_decoder().block)
-        student_encoder_layers = len(student.get_encoder().block)
-        student_decoder_layers = len(student.get_decoder().block)
+        #     teacher_encoder_layers = len(teacher.get_encoder().block)
+        #     teacher_decoder_layers = len(teacher.get_decoder().block)
+        #     student_encoder_layers = len(student.get_encoder().block)
+        #     student_decoder_layers = len(student.get_decoder().block)
         # else:
         #     teacher_encoder_layers = teacher.config.encoder_layers
         #     teacher_decoder_layers = teacher.config.decoder_layers
         #     student_encoder_layers = student.config.encoder_layers
         #     student_decoder_layers = student.config.decoder_layers
 
+        # t5 as teacher
+        teacher_encoder_layers = len(teacher.get_encoder().block)
+        teacher_decoder_layers = len(teacher.get_decoder().block)
+        # bart as student
+        student_encoder_layers = student.config.encoder_layers
+        student_decoder_layers = student.config.decoder_layers
+
         self.different_encoder = student_encoder_layers != teacher_encoder_layers
         self.different_decoder = student_decoder_layers != teacher_decoder_layers
 
         if e_layer_ids is None or d_layer_ids is None:
-           e_layer_ids = list(range(student_encoder_layers))
-           d_layer_ids = list(range(student_decoder_layers))
+            e_layer_ids = list(range(student_encoder_layers))
+            d_layer_ids = list(range(student_decoder_layers))
 
-        
         self.e_layer_ids, self.d_layer_ids = e_layer_ids, d_layer_ids  # type: List[int], List[int]
 
         self.teacher = teacher
@@ -120,11 +124,11 @@ class BartSummarizationDistiller(SummarizationModule):
         t_logits_slct = t_logits_slct.view(-1, vocab_size)  # (bs * seq_length, voc_size) modulo the 1s in mask
         assert t_logits_slct.size() == s_logits_slct.size()
         loss_ce = (
-            self.ce_loss_fct(
-                F.log_softmax(s_logits_slct / self.temperature, dim=-1),
-                F.softmax(t_logits_slct / self.temperature, dim=-1),
-            )
-            * (self.temperature) ** 2
+                self.ce_loss_fct(
+                    F.log_softmax(s_logits_slct / self.temperature, dim=-1),
+                    F.softmax(t_logits_slct / self.temperature, dim=-1),
+                )
+                * (self.temperature) ** 2
         )
         return loss_ce
 
@@ -164,7 +168,6 @@ class BartSummarizationDistiller(SummarizationModule):
         loss_fct = torch.nn.CrossEntropyLoss(ignore_index=pad_token_id)
         student_lm_loss = loss_fct(lm_logits.view(-1, lm_logits.shape[-1]), labels.view(-1))
 
-
         def zero_tensor():
             return torch.tensor(0.0).type_as(student_lm_loss)
 
@@ -181,7 +184,7 @@ class BartSummarizationDistiller(SummarizationModule):
             outputs = self.teacher(
                 input_ids,
                 attention_mask=teacher_mask,
-                encoder_outputs=(teacher_enc_outputs, ),
+                encoder_outputs=(teacher_enc_outputs,),
                 decoder_input_ids=teacher_decoder_input_ids,
                 lm_labels=labels,
                 output_hidden_states=True,
@@ -192,9 +195,9 @@ class BartSummarizationDistiller(SummarizationModule):
         loss_ce = self.calc_ce_loss(dec_mask, lm_logits, tlogits)
 
         blended_loss = (
-            self.alpha_ce * loss_ce
-            + self.alpha_mlm * student_lm_loss
-            + self.hparams.alpha_hid * (hid_loss_dec)
+                self.alpha_ce * loss_ce
+                + self.alpha_mlm * student_lm_loss
+                + self.hparams.alpha_hid * (hid_loss_dec)
         )
 
         return blended_loss, loss_ce, student_lm_loss, hid_loss_dec
