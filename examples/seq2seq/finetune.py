@@ -147,13 +147,15 @@ class SummarizationModule(BaseTransformer):
             self.save_readable_batch(batch)
 
         outputs = self(src_ids, attention_mask=src_mask, decoder_input_ids=decoder_input_ids, use_cache=False)
-        lm_logits = outputs[0]
+        sequence_output = outputs[0]
+        sequence_output = sequence_output * (self.model_dim ** -0.5)
+        lm_logits = self.model.lm_head(sequence_output)
         if self.hparams.label_smoothing == 0:
             # Same behavior as modeling_bart.py, besides ignoring pad_token_id
             ce_loss_fct = torch.nn.CrossEntropyLoss(ignore_index=pad_token_id)
 
             assert lm_logits.shape[-1] == self.vocab_size
-            loss = ce_loss_fct(lm_logits.view(-1, lm_logits.shape[-1]), tgt_ids.view(-1))
+            loss = ce_loss_fct(lm_logits.view(-1, lm_logits.size(-1)), tgt_ids.view(-1))
         else:
             lprobs = torch.nn.functional.log_softmax(lm_logits, dim=-1)
             loss, nll_loss = label_smoothed_nll_loss(
