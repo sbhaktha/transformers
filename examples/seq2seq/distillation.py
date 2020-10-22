@@ -54,16 +54,16 @@ class BartSummarizationDistiller(SummarizationModule):
 
         student_encoder_layers, student_decoder_layers = None, None
 
-        if model_type == "t5":
-            teacher_encoder_layers = len(teacher.get_encoder().block)
-            teacher_decoder_layers = len(teacher.get_decoder().block)
-            student_encoder_layers = len(student.get_encoder().block)
-            student_decoder_layers = len(student.get_decoder().block)
-        else:
-            teacher_encoder_layers = teacher.config.encoder_layers
-            teacher_decoder_layers = teacher.config.decoder_layers
-            student_encoder_layers = student.config.encoder_layers
-            student_decoder_layers = student.config.decoder_layers
+        # if model_type == "t5":
+        teacher_encoder_layers = len(teacher.get_encoder().block)
+        teacher_decoder_layers = len(teacher.get_decoder().block)
+        student_encoder_layers = len(student.get_encoder().block)
+        student_decoder_layers = len(student.get_decoder().block)
+        # else:
+        #     teacher_encoder_layers = teacher.config.encoder_layers
+        #     teacher_decoder_layers = teacher.config.decoder_layers
+        #     student_encoder_layers = student.config.encoder_layers
+        #     student_decoder_layers = student.config.decoder_layers
 
         self.different_encoder = student_encoder_layers != teacher_encoder_layers
         self.different_decoder = student_decoder_layers != teacher_decoder_layers
