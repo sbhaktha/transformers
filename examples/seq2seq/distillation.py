@@ -82,11 +82,11 @@ class BartSummarizationDistiller(SummarizationModule):
         self.teacher = teacher
         freeze_params(self.teacher)
 
-        # if not self.different_encoder:  # To save RAM, delete teacher encoder and freeze student encoder.
-        #     try:
-        #         del self.teacher.model.encoder
-        #     except AttributeError:  # T5
-        #         del self.teacher.encoder
+        if not self.different_encoder:  # To save RAM, delete teacher encoder and freeze student encoder.
+            try:
+                del self.teacher.model.encoder
+            except AttributeError:  # T5
+                del self.teacher.encoder
 
         self.e_matches = None
         self.d_matches = None
