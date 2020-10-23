@@ -160,8 +160,8 @@ class SummarizationModule(BaseTransformer):
         # #         lprobs, tgt_ids, self.hparams.label_smoothing, ignore_index=pad_token_id
         # #     )
         # loss = self.model(input_ids=src_ids, labels=tgt_ids, return_dict=True).loss
-        # return (loss,)
-        return self.model.forward(input_ids=src_ids, labels=tgt_ids, return_dict=True).loss
+        loss = self.model.forward(input_ids=src_ids, labels=tgt_ids, return_dict=True).loss
+        return (loss,)
 
     @property
     def pad(self) -> int:
