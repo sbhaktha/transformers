@@ -378,10 +378,10 @@ def main(args, model=None) -> SummarizationModule:
     if len(os.listdir(args.output_dir)) > 3 and args.do_train:
         raise ValueError("Output directory ({}) already exists and is not empty.".format(args.output_dir))
     if model is None:
-        if "summarization" in args.task:
-            model: SummarizationModule = SummarizationModule(args)
-        else:
-            model: SummarizationModule = TranslationModule(args)
+        # if "summarization" in args.task:
+        model: SummarizationModule = SummarizationModule(args)
+        # else:
+        #     model: SummarizationModule = TranslationModule(args)
     dataset = Path(args.data_dir).name
     if (
         args.logger_name == "default"
