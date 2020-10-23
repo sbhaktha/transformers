@@ -145,22 +145,23 @@ class SummarizationModule(BaseTransformer):
         if not self.already_saved_batch:  # This would be slightly better if it only happened on rank zero
             batch["decoder_input_ids"] = decoder_input_ids
             self.save_readable_batch(batch)
-
-        # outputs = self(src_ids, attention_mask=src_mask, decoder_input_ids=decoder_input_ids, use_cache=False)
-        # lm_logits = outputs[0]
-        # if self.hparams.label_smoothing == 0:
-        #     # Same behavior as modeling_bart.py, besides ignoring pad_token_id
-        #     ce_loss_fct = torch.nn.CrossEntropyLoss(ignore_index=pad_token_id)
         #
-        #     assert lm_logits.shape[-1] == self.vocab_size
-        #     loss = ce_loss_fct(lm_logits.view(-1, lm_logits.size(-1)), tgt_ids.view(-1))
-        # else:
-        #     lprobs = torch.nn.functional.log_softmax(lm_logits, dim=-1)
-        #     loss, nll_loss = label_smoothed_nll_loss(
-        #         lprobs, tgt_ids, self.hparams.label_smoothing, ignore_index=pad_token_id
-        #     )
-        loss = self.model(input_ids=src_ids, labels=tgt_ids, return_dict=True).loss
-        return (loss,)
+        # # outputs = self(src_ids, attention_mask=src_mask, decoder_input_ids=decoder_input_ids, use_cache=False)
+        # # lm_logits = outputs[0]
+        # # if self.hparams.label_smoothing == 0:
+        # #     # Same behavior as modeling_bart.py, besides ignoring pad_token_id
+        # #     ce_loss_fct = torch.nn.CrossEntropyLoss(ignore_index=pad_token_id)
+        # #
+        # #     assert lm_logits.shape[-1] == self.vocab_size
+        # #     loss = ce_loss_fct(lm_logits.view(-1, lm_logits.size(-1)), tgt_ids.view(-1))
+        # # else:
+        # #     lprobs = torch.nn.functional.log_softmax(lm_logits, dim=-1)
+        # #     loss, nll_loss = label_smoothed_nll_loss(
+        # #         lprobs, tgt_ids, self.hparams.label_smoothing, ignore_index=pad_token_id
+        # #     )
+        # loss = self.model(input_ids=src_ids, labels=tgt_ids, return_dict=True).loss
+        # return (loss,)
+        return self.model.forward(input_ids=src_ids, labels=tgt_ids, return_dict=True).loss
 
     @property
     def pad(self) -> int:
@@ -212,7 +213,6 @@ class SummarizationModule(BaseTransformer):
     def _generative_step(self, batch: dict) -> dict:
         t0 = time.time()
 
-        # parser.add_argument('--eval_max_gen_length', type=int, default=None, help='never generate more than n tokens')
         generated_ids = self.model.generate(
             batch["input_ids"],
             attention_mask=batch["attention_mask"],
@@ -227,11 +227,7 @@ class SummarizationModule(BaseTransformer):
         loss_tensors = self._step(batch)
         base_metrics = {name: loss for name, loss in zip(self.loss_names, loss_tensors)}
         rouge: Dict = self.calc_generative_metrics(preds, target)
-        print(" ------ example pred ------")
-        print("\n".join(preds[:5]))
-        print(" ----- example target -----")
-        print("\n".join(target[:5]))
-        print("---------------------------")
+        print(f"pred: `{preds[0]}` vs target: `{target[0]}`")
         summ_len = np.mean(lmap(len, generated_ids))
         base_metrics.update(gen_time=gen_time, gen_len=summ_len, preds=preds, target=target, **rouge)
         return base_metrics
