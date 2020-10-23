@@ -47,7 +47,7 @@ def metric_max_over_ground_truths(metric_fn, prediction,
 
 
 def main():
-    with open("/Users/danielk/Desktop/nqopen_csv/test.generations", "r") as pred:
+    with open("/Users/danielk/Desktop/nqopen_csv/test.distilled-3b-to-small-no-teacher.generations", "r") as pred:
         preds = [line.replace("\n", "") for line in pred.readlines()]
     em_list = []
     rm_list = []

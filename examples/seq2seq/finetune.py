@@ -164,7 +164,7 @@ class SummarizationModule(BaseTransformer):
         #     loss, nll_loss = label_smoothed_nll_loss(
         #         lprobs, tgt_ids, self.hparams.label_smoothing, ignore_index=pad_token_id
         #     )
-        loss = self.model(input_ids=src_ids, labels=tgt_ids, use_cache=False)
+        loss = self.model(input_ids=src_ids, labels=tgt_ids, return_dict=True).loss
         return (loss,)
 
     @property
