@@ -146,21 +146,25 @@ class SummarizationModule(BaseTransformer):
             batch["decoder_input_ids"] = decoder_input_ids
             self.save_readable_batch(batch)
 
-        outputs = self(src_ids, attention_mask=src_mask, decoder_input_ids=decoder_input_ids, use_cache=False)
-        sequence_output = outputs[0]
-        sequence_output = sequence_output * (self.model.model_dim ** -0.5)
-        lm_logits = self.model.lm_head(sequence_output)
-        if self.hparams.label_smoothing == 0:
-            # Same behavior as modeling_bart.py, besides ignoring pad_token_id
-            ce_loss_fct = torch.nn.CrossEntropyLoss(ignore_index=pad_token_id)
+        # input_ids = tokenizer('translate English to German: The house is wonderful.', return_tensors='pt').input_ids
+        # labels = tokenizer('Das Haus ist wunderbar.', return_tensors='pt').input_ids
+        # # the forward function automatically creates the correct decoder_input_ids
+        # loss = model(input_ids=input_ids, labels=labels, return_dict=True).loss
 
-            assert lm_logits.shape[-1] == self.vocab_size
-            loss = ce_loss_fct(lm_logits.view(-1, lm_logits.size(-1)), tgt_ids.view(-1))
-        else:
-            lprobs = torch.nn.functional.log_softmax(lm_logits, dim=-1)
-            loss, nll_loss = label_smoothed_nll_loss(
-                lprobs, tgt_ids, self.hparams.label_smoothing, ignore_index=pad_token_id
-            )
+        # outputs = self(src_ids, attention_mask=src_mask, decoder_input_ids=decoder_input_ids, use_cache=False)
+        # lm_logits = outputs[0]
+        # if self.hparams.label_smoothing == 0:
+        #     # Same behavior as modeling_bart.py, besides ignoring pad_token_id
+        #     ce_loss_fct = torch.nn.CrossEntropyLoss(ignore_index=pad_token_id)
+        #
+        #     assert lm_logits.shape[-1] == self.vocab_size
+        #     loss = ce_loss_fct(lm_logits.view(-1, lm_logits.size(-1)), tgt_ids.view(-1))
+        # else:
+        #     lprobs = torch.nn.functional.log_softmax(lm_logits, dim=-1)
+        #     loss, nll_loss = label_smoothed_nll_loss(
+        #         lprobs, tgt_ids, self.hparams.label_smoothing, ignore_index=pad_token_id
+        #     )
+        loss = self.model(input_ids=src_ids, labels=tgt_ids, use_cache=False)
         return (loss,)
 
     @property
