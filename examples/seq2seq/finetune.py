@@ -75,7 +75,7 @@ class SummarizationModule(BaseTransformer):
         self.dataset_kwargs: dict = dict(
             data_dir=self.hparams.data_dir,
             max_source_length=self.hparams.max_source_length,
-            prefix=self.model.config.prefix or "",
+            prefix="",
         )
         n_observations_per_split = {
             "train": self.hparams.n_train,
@@ -103,6 +103,15 @@ class SummarizationModule(BaseTransformer):
         if self.model.config.decoder_start_token_id is None and isinstance(self.tokenizer, MBartTokenizer):
             self.decoder_start_token_id = self.tokenizer.lang_code_to_id[hparams.tgt_lang]
             self.model.config.decoder_start_token_id = self.decoder_start_token_id
+        else:
+            self.decoder_start_token_id = self.model.config.decoder_start_token_id
+            self.model.config.decoder_start_token_id = self.decoder_start_token_id
+
+        print("----------")
+        print(f"self.config.decoder_start_token_id: {self.config.decoder_start_token_id}")
+        print(f"self.decoder_start_token_id: {self.decoder_start_token_id}")
+        print(f"self.model.config.decoder_start_token_id: {self.model.config.decoder_start_token_id}")
+
         self.dataset_class = (
             Seq2SeqDataset if hasattr(self.tokenizer, "prepare_seq2seq_batch") else LegacySeq2SeqDataset
         )
