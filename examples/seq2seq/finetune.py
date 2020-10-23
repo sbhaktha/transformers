@@ -227,6 +227,11 @@ class SummarizationModule(BaseTransformer):
         loss_tensors = self._step(batch)
         base_metrics = {name: loss for name, loss in zip(self.loss_names, loss_tensors)}
         rouge: Dict = self.calc_generative_metrics(preds, target)
+        print(" ------ example pred ------")
+        print("\n".join(preds[:5]))
+        print(" ----- example target -----")
+        print("\n".join(target[:5]))
+        print("---------------------------")
         summ_len = np.mean(lmap(len, generated_ids))
         base_metrics.update(gen_time=gen_time, gen_len=summ_len, preds=preds, target=target, **rouge)
         return base_metrics
