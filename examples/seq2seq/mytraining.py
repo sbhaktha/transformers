@@ -46,7 +46,8 @@ TRAIN_EPOCHS=20
 if __name__ == '__main__':
     # parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
     parser = HfArgumentParser((TrainingArguments))
-    model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+    # model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+    training_args = parser.parse_args_into_dataclasses()
 
     wandb.init(project="finetuning_t5")
 
