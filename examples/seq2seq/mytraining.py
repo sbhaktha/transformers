@@ -154,6 +154,7 @@ if __name__ == '__main__':
     for epoch in range(TRAIN_EPOCHS):
         trainer.train()
         trainer.save_model()
+        trainer.evaluate()
         # if trainer.is_world_master():
         #     tokenizer.savePretrained('/models')
         # train(epoch, tokenizer, model, device, training_loader, optimizer, val_loader_mini)
