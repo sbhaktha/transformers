@@ -52,8 +52,8 @@ def main():
     print("TRAIN Dataset tuple count: {}".format(train_dataset.shape))
     print("DEV Dataset tuple_count: {}".format(val_dataset.shape))
 
-    training_set = MyDataset(train_dataset, tokenizer, IN_LEN, OUT_LEN)
-    val_set = MyDataset(val_dataset, tokenizer, IN_LEN, OUT_LEN)
+    training_set = MyDataset(dataframe=train_dataset, tokenizer=tokenizer, source_len=IN_LEN, target_len=OUT_LEN)
+    val_set = MyDataset(dataframe=val_dataset, tokenizer=tokenizer, source_len=IN_LEN, target_len=OUT_LEN)
 
     model = T5ForConditionalGeneration.from_pretrained(model_name, use_cdn=False)
     model = model.to(device)
