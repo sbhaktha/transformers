@@ -81,6 +81,7 @@ def main():
         "do_train": True,
         "seed": 103
     }
+    training_args.seed=103
     trainer = Trainer(
         model=model,
         args=training_args,
