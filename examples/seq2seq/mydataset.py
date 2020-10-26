@@ -22,27 +22,26 @@ logging.basicConfig(level=logging.DEBUG)
 
 class MyDataset(Dataset):
 
-    def __init__(self, dataframe, tokenizer, source_len, summ_len, model="t5", is_eval=False):
+    def __init__(self, dataframe, tokenizer, source_len, target_len, is_eval=False):
         self.tokenizer = tokenizer
         self.data = dataframe
         self.source_len = source_len
-        self.summ_len = summ_len
-        self.text = self.data.head_event
-        self.ctext = self.data.tail_event
-        self.model = model
+        self.target_len = target_len
+        self.question = self.data.question
+        self.ans = self.data.ans
         self.is_eval = is_eval
 
     def __len__(self):
-        return len(self.text)
+        return len(self.question)
 
     def __getitem__(self, index):
-        text = str(self.text[index])
+        text = str(self.question[index])
         text = ' '.join(text.split())
 
-        ctext = str(self.ctext[index])
+        ctext = str(self.ans[index])
         ctext = ' '.join(ctext.split())
         source = self.tokenizer.batch_encode_plus([text], pad_to_max_length=True, max_length=self.source_len, return_tensors='pt', truncation=True)
-        target = self.tokenizer.batch_encode_plus([ctext], pad_to_max_length=True, max_length=self.summ_len, return_tensors='pt', truncation=True)
+        target = self.tokenizer.batch_encode_plus([ctext], pad_to_max_length=True, max_length=self.target_len, return_tensors='pt', truncation=True)
 
         if index < 5:
             logger.info("Source: {}".format(self.tokenizer.batch_decode(source['input_ids'])))

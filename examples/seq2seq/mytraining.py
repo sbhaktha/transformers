@@ -6,7 +6,7 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader, RandomSampler, SequentialSampler
 
 # Importing the T5 modules from huggingface/transformers
-from examples.seq2seq.mydataset import MyDataset
+from mydataset import MyDataset
 from transformers import T5Tokenizer, T5ForConditionalGeneration
 from transformers import Trainer, TrainingArguments
 
