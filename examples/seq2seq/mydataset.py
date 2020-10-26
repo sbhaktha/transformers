@@ -55,6 +55,6 @@ class MyDataset(Dataset):
         return {
             'input_ids': source_ids.to(dtype=torch.long),
             'attention_mask': source_mask.to(dtype=torch.long),
-            'encoder_hidden_states': target_ids.to(dtype=torch.long),
-            'encoder_attention_mask': target_mask.to(dtype=torch.long)
+            'decoder_input_ids': target_ids.to(dtype=torch.long),
+            'decoder_attention_mask': target_mask.to(dtype=torch.long)
         }
