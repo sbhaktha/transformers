@@ -8,7 +8,17 @@ from torch.utils.data import Dataset, DataLoader, RandomSampler, SequentialSampl
 # Importing the T5 modules from huggingface/transformers
 from mydataset import MyDataset
 from transformers import T5Tokenizer, T5ForConditionalGeneration
-from transformers import Trainer, TrainingArguments
+
+from transformers import (
+    AutoConfig,
+    AutoModelForSequenceClassification,
+    AutoTokenizer,
+    HfArgumentParser,
+    Trainer,
+    TrainingArguments,
+    default_data_collator,
+    set_seed,
+)
 
 # Import os for env varibles via Beaker
 import os
@@ -32,7 +42,12 @@ OUT_LEN = 10
 TRAIN_EPOCHS=20
 
 
-def main():
+
+if __name__ == '__main__':
+    # parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
+    parser = HfArgumentParser((TrainingArguments))
+    model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+
     wandb.init(project="finetuning_t5")
 
     config = wandb.config
@@ -64,24 +79,29 @@ def main():
     wandb.watch(model, log="all")
     print('Initiating Fine-Tuning for the model on our dataset')
 
-    training_args = {
-        'max_len': IN_LEN,
-        'target_max_len': OUT_LEN,
-        'device': device,
-        "max_len": 512,
-        "target_max_len": 16,
-        "output_dir": './models/',
-        "overwrite_output_dir": True,
-        "per_gpu_train_batch_size": 32,
-        "per_gpu_eval_batch_size": 32,
-        "gradient_accumulation_steps": 4,
-        "learning_rate": 1e-4,
-        # "tpu_num_cores": 8,
-        "num_train_epochs": 20,
-        "do_train": True,
-        "seed": 103
-    }
-    training_args.seed=103
+    # training_args = {
+    #     'max_len': IN_LEN,
+    #     'target_max_len': OUT_LEN,
+    #     'device': device,
+    #     "max_len": 512,
+    #     "target_max_len": 16,
+    #     "output_dir": './models/',
+    #     "overwrite_output_dir": True,
+    #     "per_gpu_train_batch_size": 32,
+    #     "per_gpu_eval_batch_size": 32,
+    #     "gradient_accumulation_steps": 4,
+    #     "learning_rate": 1e-4,
+    #     # "tpu_num_cores": 8,
+    #     "num_train_epochs": 20,
+    #     "do_train": True,
+    #     "seed": 103
+    # }
+
+    # Set seed
+    set_seed(103)
+
+    print(training_args)
+
     trainer = Trainer(
         model=model,
         args=training_args,
@@ -98,7 +118,3 @@ def main():
         # train(epoch, tokenizer, model, device, training_loader, optimizer, val_loader_mini)
 
     model.save_pretrained('models')
-
-
-if __name__ == '__main__':
-    main()
