@@ -29,6 +29,7 @@ DEV_DATA_PATH = '/home/danielk/nqopen_csv/dev.tsv'
 model_name = 't5-small'
 IN_LEN = 20
 OUT_LEN = 10
+TRAIN_EPOCHS=20
 
 
 def main():
@@ -64,8 +65,8 @@ def main():
     print('Initiating Fine-Tuning for the model on our dataset')
 
     training_args = {
-        'max_len': config.IN_LEN,
-        'target_max_len': config.SUMMARY_LEN,
+        'max_len': IN_LEN,
+        'target_max_len': OUT_LEN,
         'device': device,
         "max_len": 512,
         "target_max_len": 16,
@@ -87,7 +88,7 @@ def main():
         prediction_loss_only=True,
     )
 
-    for epoch in range(config.TRAIN_EPOCHS):
+    for epoch in range(TRAIN_EPOCHS):
         trainer.train()
         trainer.save_model()
         # if trainer.is_world_master():
