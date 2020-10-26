@@ -78,7 +78,8 @@ def main():
         "learning_rate": 1e-4,
         # "tpu_num_cores": 8,
         "num_train_epochs": 20,
-        "do_train": True
+        "do_train": True,
+        "seed": 103
     }
     trainer = Trainer(
         model=model,
