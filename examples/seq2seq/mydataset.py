@@ -53,8 +53,8 @@ class MyDataset(Dataset):
         target_mask = target['attention_mask'].squeeze()
 
         return {
-            'source_ids': source_ids.to(dtype=torch.long),
-            'source_mask': source_mask.to(dtype=torch.long),
-            'target_ids': target_ids.to(dtype=torch.long),
-            'target_ids_y': target_mask.to(dtype=torch.long)
+            'input_ids': source_ids.to(dtype=torch.long),
+            'attention_mask': source_mask.to(dtype=torch.long),
+            'encoder_hidden_states': target_ids.to(dtype=torch.long),
+            'encoder_attention_mask': target_mask.to(dtype=torch.long)
         }

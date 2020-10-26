@@ -117,7 +117,7 @@ if __name__ == '__main__':
 
     # optimizer = torch.optim.Adam(params=model.parameters(), lr=config.LEARNING_RATE)
 
-    wandb.watch(model, log="all")
+    # wandb.watch(model, log="all")
     print('Initiating Fine-Tuning for the model on our dataset')
 
     # training_args = {
