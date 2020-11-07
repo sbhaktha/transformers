@@ -19,7 +19,6 @@ from transformers import AutoModelForSeq2SeqLM, MBartTokenizer, T5ForConditional
 from transformers.modeling_bart import shift_tokens_right
 from utils import calculate_bleu, check_output_dir, freeze_params, label_smoothed_nll_loss, use_task_specific_params
 
-
 # need the parent dir module
 sys.path.insert(2, str(Path(__file__).resolve().parents[1]))
 from lightning_base import generic_train  # noqa
@@ -28,7 +27,7 @@ from lightning_base import generic_train  # noqa
 class BartSummarizationDistiller(SummarizationModule):
     """Supports Bart, Pegasus and other models that inherit from Bart."""
 
-    loss_names = ["loss", "ce_loss", "mlm_loss", "hid_loss_enc", "hid_loss_dec"]
+    loss_names = ["loss", "ce_loss", "mlm_loss", "hid_loss_dec"]
 
     def __init__(self, hparams):
         assert Path(hparams.data_dir).exists()
@@ -38,18 +37,14 @@ class BartSummarizationDistiller(SummarizationModule):
         save_dir = self.output_dir.joinpath("student")
 
         hparams.model_name_or_path = str(save_dir)  # Tell lightning we are training the student
+
         teacher = AutoModelForSeq2SeqLM.from_pretrained(hparams.teacher).eval()
         use_task_specific_params(teacher, hparams.task)  # We copy good generation parameters to student by default
-        
+
         e_layer_ids, d_layer_ids = None, None
-        if hparams.student is not None:
-            student = AutoModelForSeq2SeqLM.from_pretrained(hparams.student).eval()
-            use_task_specific_params(student, hparams.task)
-        else:
-            student, e_layer_ids, d_layer_ids = create_student_by_copying_alternating_layers(
-                teacher, e=hparams.student_encoder_layers, d=hparams.student_decoder_layers, save_path=save_dir
-            )
-        
+        student = AutoModelForSeq2SeqLM.from_pretrained(hparams.student)
+        use_task_specific_params(student, hparams.task)
+
         if hparams.length_penalty != -1:
             student.config.length_penalty = hparams.length_penalty
         super().__init__(hparams, model=student, config=student.config)
@@ -57,25 +52,31 @@ class BartSummarizationDistiller(SummarizationModule):
 
         student_encoder_layers, student_decoder_layers = None, None
 
-        if model_type == "t5":
-            teacher_encoder_layers = len(teacher.get_encoder().block)
-            teacher_decoder_layers = len(teacher.get_decoder().block)
-            student_encoder_layers = len(student.get_encoder().block)
-            student_decoder_layers = len(student.get_decoder().block)
-        else:
-            teacher_encoder_layers = teacher.config.encoder_layers
-            teacher_decoder_layers = teacher.config.decoder_layers
-            student_encoder_layers = student.config.encoder_layers
-            student_decoder_layers = student.config.decoder_layers
+        # if model_type == "t5":
+        #     teacher_encoder_layers = len(teacher.get_encoder().block)
+        #     teacher_decoder_layers = len(teacher.get_decoder().block)
+        #     student_encoder_layers = len(student.get_encoder().block)
+        #     student_decoder_layers = len(student.get_decoder().block)
+        # else:
+        #     teacher_encoder_layers = teacher.config.encoder_layers
+        #     teacher_decoder_layers = teacher.config.decoder_layers
+        #     student_encoder_layers = student.config.encoder_layers
+        #     student_decoder_layers = student.config.decoder_layers
+
+        # t5 as teacher
+        teacher_encoder_layers = len(teacher.get_encoder().block)
+        teacher_decoder_layers = len(teacher.get_decoder().block)
+        # bart as student
+        student_encoder_layers = student.config.encoder_layers
+        student_decoder_layers = student.config.decoder_layers
 
         self.different_encoder = student_encoder_layers != teacher_encoder_layers
         self.different_decoder = student_decoder_layers != teacher_decoder_layers
 
         if e_layer_ids is None or d_layer_ids is None:
-           e_layer_ids = list(range(student_encoder_layers))
-           d_layer_ids = list(range(student_decoder_layers))
+            e_layer_ids = list(range(student_encoder_layers))
+            d_layer_ids = list(range(student_decoder_layers))
 
-        
         self.e_layer_ids, self.d_layer_ids = e_layer_ids, d_layer_ids  # type: List[int], List[int]
 
         self.teacher = teacher
@@ -89,15 +90,6 @@ class BartSummarizationDistiller(SummarizationModule):
 
         self.e_matches = None
         self.d_matches = None
-
-        if hparams.student is None or hparams.teacher == hparams.student:
-            # Intermediate supervision: Decide which layers to supervise
-            if hparams.supervise_forward:
-                self.e_matches = get_layers_to_supervise(n_student=len(self.e_layer_ids), n_teacher=teacher_encoder_layers)
-                self.d_matches = get_layers_to_supervise(n_student=len(self.d_layer_ids), n_teacher=teacher_decoder_layers)
-            else:  # student layer should emulate hidden states of the teacher layer it was copied from
-                self.e_matches = self.e_layer_ids
-                self.d_matches = self.d_layer_ids
 
         self.ce_loss_fct = nn.KLDivLoss(reduction="batchmean")
         self.temperature = 2.0
@@ -132,11 +124,11 @@ class BartSummarizationDistiller(SummarizationModule):
         t_logits_slct = t_logits_slct.view(-1, vocab_size)  # (bs * seq_length, voc_size) modulo the 1s in mask
         assert t_logits_slct.size() == s_logits_slct.size()
         loss_ce = (
-            self.ce_loss_fct(
-                F.log_softmax(s_logits_slct / self.temperature, dim=-1),
-                F.softmax(t_logits_slct / self.temperature, dim=-1),
-            )
-            * (self.temperature) ** 2
+                self.ce_loss_fct(
+                    F.log_softmax(s_logits_slct / self.temperature, dim=-1),
+                    F.softmax(t_logits_slct / self.temperature, dim=-1),
+                )
+                * (self.temperature) ** 2
         )
         return loss_ce
 
@@ -172,86 +164,44 @@ class BartSummarizationDistiller(SummarizationModule):
 
         # Same cross entropy vs. label smoothing logic as finetune.py
         assert lm_logits.shape[-1] == self.model.config.vocab_size
-        if self.hparams.label_smoothing == 0:
-            # Same behavior as modeling_bart.py, besides ignoring pad_token_id
-            loss_fct = torch.nn.CrossEntropyLoss(ignore_index=pad_token_id)
-            student_lm_loss = loss_fct(lm_logits.view(-1, lm_logits.shape[-1]), labels.view(-1))
-        else:
-            lprobs = torch.nn.functional.log_softmax(lm_logits, dim=-1)
-            student_lm_loss, _ = label_smoothed_nll_loss(
-                lprobs, labels, self.hparams.label_smoothing, ignore_index=pad_token_id
-            )
+        # Same behavior as modeling_bart.py, besides ignoring pad_token_id
+        loss_fct = torch.nn.CrossEntropyLoss(ignore_index=pad_token_id)
+        student_lm_loss = loss_fct(lm_logits.view(-1, lm_logits.shape[-1]), labels.view(-1))
 
         def zero_tensor():
             return torch.tensor(0.0).type_as(student_lm_loss)
 
         teacher_enc_outputs = enc_outputs
-        hid_loss_enc, hid_loss_dec = zero_tensor(), zero_tensor()
+        hid_loss_dec = zero_tensor()
         if self.different_encoder:  # compute encoder hidden state loss
             with torch.no_grad():
                 teacher_enc_outputs, teacher_enc_hid = self.teacher.get_encoder()(
                     input_ids, attention_mask=src_mask, output_hidden_states=True
                 )
-            hid_loss_enc = self.maybe_calc_hidden_loss(
-                src_mask,
-                enc_hidden_state,
-                teacher_enc_hid,
-                self.e_matches,
-                normalize_hidden=self.hparams.normalize_hidden,
-            )
-     
 
         teacher_mask = input_ids.ne(pad_token_id)
         with torch.no_grad():
             outputs = self.teacher(
                 input_ids,
                 attention_mask=teacher_mask,
-                encoder_outputs=(teacher_enc_outputs, ),
+                encoder_outputs=(teacher_enc_outputs,),
                 decoder_input_ids=teacher_decoder_input_ids,
                 lm_labels=labels,
                 output_hidden_states=True,
                 return_dict=True,
             )
-            tlogits, tdec_hidden = outputs.logits, outputs.decoder_hidden_states 
+            tlogits, tdec_hidden = outputs.logits, outputs.decoder_hidden_states
         dec_mask = teacher_decoder_input_ids.ne(pad_token_id)
         loss_ce = self.calc_ce_loss(dec_mask, lm_logits, tlogits)
-        if self.alpha_hid > 0:  # Intermediate supervision of decoder hidden states
-            hid_loss_dec = self.maybe_calc_hidden_loss(
-                dec_mask, dec_hidden, tdec_hidden, self.d_matches, normalize_hidden=self.hparams.normalize_hidden
-            )
 
         blended_loss = (
-            self.alpha_ce * loss_ce
-            + self.alpha_mlm * student_lm_loss
-            + self.hparams.alpha_hid * (hid_loss_enc + hid_loss_dec)
+                self.alpha_ce * loss_ce
+                + self.alpha_mlm * student_lm_loss
+                + self.hparams.alpha_hid * (hid_loss_dec)
         )
-        return blended_loss, loss_ce, student_lm_loss, hid_loss_enc, hid_loss_dec
 
+        return blended_loss, loss_ce, student_lm_loss, hid_loss_dec
 
-
-    @staticmethod
-    def calc_hidden_loss(attention_mask, hidden_states, hidden_states_T, matches, normalize_hidden):
-        """MSE(student_hid, teacher_hid[matches]). Called "Intermediate supervision" in paper. Inspired by TinyBERT."""
-        msg = "expected list or tuple for hidden_states, got tensor of shape: "
-        assert not isinstance(hidden_states, torch.Tensor), f"{msg}{hidden_states.shape}"
-        assert not isinstance(hidden_states_T, torch.Tensor), f"{msg}{hidden_states_T.shape}"
-        mask = attention_mask.to(hidden_states[0])
-        valid_count = mask.sum() * hidden_states[0].size(-1)
-        student_states = torch.stack([hidden_states[i] for i in range(len(matches))])
-        teacher_states = torch.stack([hidden_states_T[j] for j in matches])
-        if normalize_hidden:
-            student_states = F.layer_norm(student_states, student_states.shape[1:])
-            teacher_states = F.layer_norm(teacher_states, teacher_states.shape[1:])
-        mse = F.mse_loss(student_states, teacher_states, reduction="none")
-        masked_mse = (mse * mask.unsqueeze(0).unsqueeze(-1)).sum() / valid_count
-        return masked_mse
-
-    @staticmethod
-    def maybe_calc_hidden_loss(attention_mask, hidden_states, hidden_states_T, matches, normalize_hidden):
-        if matches:
-            return calc_hidden_loss(attention_mask, hidden_states, hidden_states_T, matches, normalize_hidden)
-        else:
-            return torch.tensor(0.0)
 
 def add_distill_args(parser):
     parser.add_argument("--teacher", type=str)

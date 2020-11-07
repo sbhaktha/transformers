@@ -76,7 +76,7 @@ class SummarizationModule(BaseTransformer):
         self.dataset_kwargs: dict = dict(
             data_dir=self.hparams.data_dir,
             max_source_length=self.hparams.max_source_length,
-            prefix=self.model.config.prefix or "",
+            prefix="",
         )
         n_observations_per_split = {
             "train": self.hparams.n_train,
@@ -104,6 +104,15 @@ class SummarizationModule(BaseTransformer):
         if self.model.config.decoder_start_token_id is None and isinstance(self.tokenizer, MBartTokenizer):
             self.decoder_start_token_id = self.tokenizer.lang_code_to_id[hparams.tgt_lang]
             self.model.config.decoder_start_token_id = self.decoder_start_token_id
+        else:
+            self.decoder_start_token_id = self.model.config.decoder_start_token_id
+            self.model.config.decoder_start_token_id = self.decoder_start_token_id
+
+        print("----------")
+        print(f"self.config.decoder_start_token_id: {self.config.decoder_start_token_id}")
+        print(f"self.decoder_start_token_id: {self.decoder_start_token_id}")
+        print(f"self.model.config.decoder_start_token_id: {self.model.config.decoder_start_token_id}")
+
         self.dataset_class = (
             Seq2SeqDataset if hasattr(self.tokenizer, "prepare_seq2seq_batch") else LegacySeq2SeqDataset
         )
@@ -146,20 +155,22 @@ class SummarizationModule(BaseTransformer):
         if not self.already_saved_batch:  # This would be slightly better if it only happened on rank zero
             batch["decoder_input_ids"] = decoder_input_ids
             self.save_readable_batch(batch)
-
-        outputs = self(src_ids, attention_mask=src_mask, decoder_input_ids=decoder_input_ids, use_cache=False)
-        lm_logits = outputs[0]
-        if self.hparams.label_smoothing == 0:
-            # Same behavior as modeling_bart.py, besides ignoring pad_token_id
-            ce_loss_fct = torch.nn.CrossEntropyLoss(ignore_index=pad_token_id)
-
-            assert lm_logits.shape[-1] == self.vocab_size
-            loss = ce_loss_fct(lm_logits.view(-1, lm_logits.shape[-1]), tgt_ids.view(-1))
-        else:
-            lprobs = torch.nn.functional.log_softmax(lm_logits, dim=-1)
-            loss, nll_loss = label_smoothed_nll_loss(
-                lprobs, tgt_ids, self.hparams.label_smoothing, ignore_index=pad_token_id
-            )
+        #
+        # # outputs = self(src_ids, attention_mask=src_mask, decoder_input_ids=decoder_input_ids, use_cache=False)
+        # # lm_logits = outputs[0]
+        # # if self.hparams.label_smoothing == 0:
+        # #     # Same behavior as modeling_bart.py, besides ignoring pad_token_id
+        # #     ce_loss_fct = torch.nn.CrossEntropyLoss(ignore_index=pad_token_id)
+        # #
+        # #     assert lm_logits.shape[-1] == self.vocab_size
+        # #     loss = ce_loss_fct(lm_logits.view(-1, lm_logits.size(-1)), tgt_ids.view(-1))
+        # # else:
+        # #     lprobs = torch.nn.functional.log_softmax(lm_logits, dim=-1)
+        # #     loss, nll_loss = label_smoothed_nll_loss(
+        # #         lprobs, tgt_ids, self.hparams.label_smoothing, ignore_index=pad_token_id
+        # #     )
+        # loss = self.model(input_ids=src_ids, labels=tgt_ids, return_dict=True).loss
+        loss = self.model.forward(input_ids=src_ids, labels=tgt_ids, return_dict=True).loss
         return (loss,)
 
     @property
@@ -211,7 +222,6 @@ class SummarizationModule(BaseTransformer):
     def _generative_step(self, batch: dict) -> dict:
         t0 = time.time()
 
-        # parser.add_argument('--eval_max_gen_length', type=int, default=None, help='never generate more than n tokens')
         generated_ids = self.model.generate(
             batch["input_ids"],
             attention_mask=batch["attention_mask"],
@@ -226,6 +236,7 @@ class SummarizationModule(BaseTransformer):
         loss_tensors = self._step(batch)
         base_metrics = {name: loss for name, loss in zip(self.loss_names, loss_tensors)}
         rouge: Dict = self.calc_generative_metrics(preds, target)
+        print(f"pred: `{preds[0]}` vs target: `{target[0]}`")
         summ_len = np.mean(lmap(len, generated_ids))
         base_metrics.update(gen_time=gen_time, gen_len=summ_len, preds=preds, target=target, **rouge)
         return base_metrics
@@ -377,10 +388,10 @@ def main(args, model=None) -> SummarizationModule:
     check_output_dir(args, expected_items=3)
 
     if model is None:
-        if "summarization" in args.task:
-            model: SummarizationModule = SummarizationModule(args)
-        else:
-            model: SummarizationModule = TranslationModule(args)
+        # if "summarization" in args.task:
+        model: SummarizationModule = SummarizationModule(args)
+        # else:
+        #     model: SummarizationModule = TranslationModule(args)
     dataset = Path(args.data_dir).name
     if (
         args.logger_name == "default"
